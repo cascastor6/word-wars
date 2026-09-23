@@ -1,0 +1,25 @@
+{
+  "rules": {
+    "games": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists() && newData.child('seats/p1').val() === auth.uid",
+        "seats": {
+          "p2": {
+            ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+          }
+        },
+        "state": {
+          ".write": "auth != null && ((data.child('turn').val() === 1 && data.parent().child('seats/p1').val() === auth.uid) || (data.child('turn').val() === 2 && data.parent().child('seats/p2').val() === auth.uid) || (data.child('over').exists() && (data.parent().child('seats/p1').val() === auth.uid || data.parent().child('seats/p2').val() === auth.uid)))",
+          ".validate": "newData.hasChildren(['letters', 'owners', 'turn', 'v']) && ((!data.exists() && newData.child('v').val() === 0) || newData.child('v').val() === data.child('v').val() + 1)"
+        },
+        "online": {
+          "$seat": {
+            ".write": "auth != null && data.parent().parent().child('seats').child($seat).val() === auth.uid",
+            ".validate": "newData.isBoolean()"
+          }
+        }
+      }
+    }
+  }
+}

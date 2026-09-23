@@ -1,0 +1,73 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "word-wars-82fa1",
+          "appId": "1:992015611284:android:f68fd7108c36bed074cb81",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "word-wars-82fa1",
+          "appId": "1:992015611284:ios:48f3a5019e17b4a374cb81",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "macos": {
+        "default": {
+          "projectId": "word-wars-82fa1",
+          "appId": "1:992015611284:ios:48f3a5019e17b4a374cb81",
+          "uploadDebugSymbols": false,
+          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "word-wars-82fa1",
+          "configurations": {
+            "android": "1:992015611284:android:f68fd7108c36bed074cb81",
+            "ios": "1:992015611284:ios:48f3a5019e17b4a374cb81",
+            "macos": "1:992015611284:ios:48f3a5019e17b4a374cb81",
+            "web": "1:992015611284:web:a710e85cf366e18c74cb81",
+            "windows": "1:992015611284:web:c884a8d09b6ab1fa74cb81"
+          }
+        }
+      }
+    }
+  },
+  "database": {
+    "rules": "database.rules.json"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/.well-known/**",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      }
+    ]
+  },
+  "emulators": {
+    "hosting": {
+      "port": 5050
+    }
+  }
+}

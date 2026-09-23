@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "web", "runtimeExecutable": "firebase", "runtimeArgs": ["emulators:start", "--only", "hosting", "--project", "word-wars-82fa1"], "port": 5050 }
+  ]
+}

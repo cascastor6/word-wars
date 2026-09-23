@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "992015611284",
+    "project_id": "word-wars-82fa1",
+    "storage_bucket": "word-wars-82fa1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:992015611284:android:f68fd7108c36bed074cb81",
+        "android_client_info": {
+          "package_name": "com.example.word_wars"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDNTEsfaIIKMsCZi_P8ZebRrB_q2pX7A8w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
