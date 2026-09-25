@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_wars/game.dart';
-import 'package:word_wars/online.dart';
+import 'package:word_wars/data/game.dart';
+import 'package:word_wars/data/online.dart';
 
 void main() {
   test("mock board: LAMB near Blue's home takes hexes", () {
