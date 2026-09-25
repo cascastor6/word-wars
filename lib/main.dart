@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 import 'game.dart';
@@ -131,13 +132,28 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+const _sizeKey = 'board.size';
+
 class _HomeScreenState extends State<HomeScreen> {
   String? resume;
+  BoardSize size = BoardSize.normal;
 
   @override
   void initState() {
     super.initState();
     refresh();
+    loadSize();
+  }
+
+  Future<void> loadSize() async {
+    final saved = (await SharedPreferences.getInstance()).getString(_sizeKey);
+    final s = BoardSize.values.asNameMap()[saved];
+    if (s != null && mounted) setState(() => size = s);
+  }
+
+  Future<void> pickSize(BoardSize s) async {
+    setState(() => size = s);
+    await (await SharedPreferences.getInstance()).setString(_sizeKey, s.name);
   }
 
   Future<void> refresh() async {
@@ -202,10 +218,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       textAlign: TextAlign.center, style: TextStyle(fontSize: 15, color: pal.muted)),
                   const SizedBox(height: 28),
                   GameButton('Play on this device', pal: pal, turn: 1, primary: true,
-                      onPressed: () => open(GameScreen(words: widget.words))),
+                      onPressed: () => open(GameScreen(words: widget.words, size: size))),
                   const SizedBox(height: 10),
                   GameButton('Invite a friend with a link', pal: pal, turn: 2, primary: true,
-                      onPressed: () => open(GameScreen(words: widget.words, online: OnlineSession(widget.words)))),
+                      onPressed: () => open(GameScreen(words: widget.words, online: OnlineSession(widget.words, size: size)))),
                   const SizedBox(height: 10),
                   GameButton('Join with a code', pal: pal, turn: 1, onPressed: askForCode),
                   if (resume != null) ...[
@@ -213,6 +229,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     GameButton('Resume online game $resume', pal: pal, turn: 1,
                         onPressed: () => widget.onJoin(resume)),
                   ],
+                  const SizedBox(height: 28),
+                  Text('Field size',
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: pal.muted)),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    for (final s in BoardSize.values) ...[
+                      if (s != BoardSize.values.first) const SizedBox(width: 8),
+                      Expanded(
+                        child: GameButton(s.label, pal: pal, turn: 1, primary: s == size,
+                            onPressed: () => pickSize(s)),
+                      ),
+                    ],
+                  ]),
+                  const SizedBox(height: 6),
+                  Text('${size.rows} rows',
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: pal.muted)),
                 ]),
               ),
             ),
@@ -224,8 +256,11 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.words, this.online});
+  const GameScreen({super.key, required this.words, this.online, this.size = BoardSize.normal});
   final Set<String> words;
+
+  /// Board size for a game on this device. Online games take the host's size.
+  final BoardSize size;
 
   /// Set for a game played over a link; null for two players on one device.
   final OnlineSession? online;
@@ -236,7 +271,7 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateMixin {
   late final OnlineSession? online = widget.online;
-  late final Game game = online?.game ?? Game(widget.words);
+  late final Game game = online?.game ?? Game(widget.words, size: widget.size);
   late final AnimationController pop =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 450), value: 1);
   final focus = FocusNode();
@@ -269,6 +304,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     focus.requestFocus();
   }
 
+  /// Changes the selection and, online, lets the opponent see it.
+  void select(void Function() f) {
+    act(f);
+    online?.shareSelection();
+  }
+
   void doPlay() => act(() {
         if (online != null) return online!.play();
         if (game.play() && !MediaQuery.disableAnimationsOf(context)) pop.forward(from: 0);
@@ -282,9 +323,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     if (e is! KeyDownEvent || !canAct) return KeyEventResult.ignored;
     switch (e.logicalKey) {
       case LogicalKeyboardKey.backspace:
-        act(game.backspace);
+        select(game.backspace);
       case LogicalKeyboardKey.escape:
-        act(game.clear);
+        select(game.clear);
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter:
         doPlay();
       default:
@@ -297,7 +338,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final pal = paletteOf(context);
     final online = this.online;
-    if (online != null && online.seat == null) return _connecting(pal, online);
+    if (online != null && !online.joined) {
+      return online.choosing && online.link != Link.failed ? _chooseSeat(pal, online) : _connecting(pal, online);
+    }
     final a = game.analyze();
     final turn = game.turn;
     final over = game.over;
@@ -328,7 +371,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       const SizedBox(height: 14),
                       Board(game: game, analysis: a, pal: pal, pop: pop,
                           onTap: (i) {
-                            if (canAct) act(() => game.tap(i));
+                            if (canAct) select(() => game.tap(i));
                           }),
                       const SizedBox(height: 6),
                       if (over == null) ..._playSection(pal, a, turn) else ..._overSection(pal, over),
@@ -370,18 +413,20 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   Widget _onlineBanner(Palette pal, OnlineSession s) {
     final code = s.code!;
-    final opp = names[3 - s.seat!]!;
+    final seat = s.seat;
     final String status;
     if (s.link == Link.reconnecting) {
       status = 'Connection lost. Reconnecting…';
     } else if (s.link == Link.failed) {
       status = s.error ?? 'Disconnected.';
+    } else if (seat == null) {
+      status = s.notice ?? 'Watching game $code.';
     } else if (!s.opponentJoined) {
-      status = 'Send this link to your friend. They play as $opp.';
+      status = 'Send this link to your friend. They play as ${names[3 - seat]}.';
     } else if (!s.opponentOnline) {
-      status = '$opp is offline. The game will continue when they come back.';
+      status = '${names[3 - seat]} is offline. The game will continue when they come back.';
     } else {
-      status = 'Online game $code. You are ${names[s.seat]}.';
+      status = 'Online game $code. You are ${names[seat]}.';
     }
     return Container(
       margin: const EdgeInsets.only(top: 4),
@@ -396,12 +441,65 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             Text(status, style: TextStyle(fontSize: 14, color: pal.muted)),
           ]),
         ),
+        if (seat == null)
+          TextButton(
+            onPressed: s.link == Link.live ? s.chooseSeat : null,
+            child: Text('Take a seat', style: TextStyle(color: pal.ink, fontWeight: FontWeight.w600)),
+          ),
         IconButton(
           tooltip: 'Share invite link',
           onPressed: () => share(code),
           icon: Icon(Icons.ios_share, color: pal.ink),
         ),
       ]),
+    );
+  }
+
+  /// Shown when the game is full and this device isn't in it.
+  Widget _chooseSeat(Palette pal, OnlineSession s) {
+    Widget seatButton(int p) {
+      final label = 'Play as ${names[p]}${s.isOnline(p) ? ' (online now)' : ''}';
+      return GameButton(label, pal: pal, turn: p, primary: true, onPressed: () => s.takeSeat(p));
+    }
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('Game ${s.code} already has two players',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.2)),
+                const SizedBox(height: 10),
+                Text(
+                  'If one of them is you in another app or browser, take over that seat. '
+                  'The other device will switch to watching.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, color: pal.muted),
+                ),
+                const SizedBox(height: 20),
+                seatButton(1),
+                const SizedBox(height: 10),
+                seatButton(2),
+                const SizedBox(height: 10),
+                GameButton('Just watch', pal: pal, turn: 1, onPressed: s.spectate),
+                if (s.error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(s.error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: pal.p2Line)),
+                ],
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: Text('Back to menu', style: TextStyle(color: pal.muted)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -443,7 +541,16 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 16, color: pal.muted),
         ),
-        const SizedBox(height: 90),
+        // The letters they're picking, mirrored live from their device.
+        SizedBox(
+          height: 48,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(a.word,
+                style: TextStyle(fontSize: 34, fontWeight: FontWeight.w600, letterSpacing: 34 * .12, color: pal.lineOf(turn))),
+          ),
+        ),
+        const SizedBox(height: 42),
       ];
     }
     final err = online?.error;
@@ -479,7 +586,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         const SizedBox(height: 12),
         Row(children: [
           Expanded(flex: 10, child: GameButton('Clear', pal: pal, turn: turn,
-              onPressed: game.sel.isEmpty || !canAct ? null : () => act(game.clear))),
+              onPressed: game.sel.isEmpty || !canAct ? null : () => select(game.clear))),
           const SizedBox(width: 8),
           Expanded(flex: 10, child: GameButton('Pass', pal: pal, turn: turn, onPressed: canAct ? doPass : null)),
           const SizedBox(width: 8),
@@ -497,7 +604,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         const SizedBox(height: 4),
         Text(over.why, textAlign: TextAlign.center, style: TextStyle(color: pal.muted, fontSize: 16)),
         const SizedBox(height: 14),
-        GameButton('New board', pal: pal, turn: game.turn, primary: true, onPressed: newBoard),
+        if (online?.spectating != true)
+          GameButton('New board', pal: pal, turn: game.turn, primary: true, onPressed: newBoard),
       ];
 
   Widget _rules(Palette pal) {
@@ -630,7 +738,7 @@ class _DisclosureState extends State<Disclosure> {
 const double _dx = 0.8660254037844386 * 40; // sqrt(3)/2 * 40
 const double _dy = 60;
 const double _r = 38;
-const Rect _viewBox = Rect.fromLTWH(-40, -44, 426.4, 448);
+Rect _viewBoxOf(BoardSize s) => Rect.fromLTWH(-40, -44, s.maxCol * _dx + 80, (s.rows - 1) * _dy + 88);
 
 Path hexPath(double r) {
   final p = Path();
@@ -709,14 +817,15 @@ class Board extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final viewBox = _viewBoxOf(game.size);
     return AspectRatio(
-      aspectRatio: _viewBox.width / _viewBox.height,
+      aspectRatio: viewBox.width / viewBox.height,
       child: LayoutBuilder(builder: (context, box) {
-        final scale = box.maxWidth / _viewBox.width;
+        final scale = box.maxWidth / viewBox.width;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (d) {
-            final pt = d.localPosition / scale + _viewBox.topLeft;
+            final pt = d.localPosition / scale + viewBox.topLeft;
             final hex = hexPath(_r);
             for (var i = 0; i < game.cells.length; i++) {
               final x = game.cells[i];
@@ -726,7 +835,7 @@ class Board extends StatelessWidget {
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
             child: CustomPaint(
-              size: Size(box.maxWidth, box.maxWidth / _viewBox.width * _viewBox.height),
+              size: Size(box.maxWidth, box.maxWidth / viewBox.width * viewBox.height),
               painter: BoardPainter(game, analysis, pal, pop),
             ),
           ),
@@ -745,8 +854,9 @@ class BoardPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.scale(size.width / _viewBox.width);
-    canvas.translate(-_viewBox.left, -_viewBox.top);
+    final viewBox = _viewBoxOf(game.size);
+    canvas.scale(size.width / viewBox.width);
+    canvas.translate(-viewBox.left, -viewBox.top);
     final hex = hexPath(_r);
     final t = Curves.easeOut.transform(pop.value);
     final cur = game.turn;

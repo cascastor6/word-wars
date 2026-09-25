@@ -48,26 +48,50 @@ dynamic _plain(Object? v) => switch (v) {
 
 enum Link { connecting, live, reconnecting, failed }
 
-/// One seat in an online game stored at games/{code} in the Realtime Database.
-/// Each device signs in anonymously; its user id is its seat, so reopening the
-/// link on the same device puts the player back in their seat.
+/// One device's view of an online game stored at games/{code} in the Realtime
+/// Database. Each device signs in anonymously; its user id is its seat, so
+/// reopening the link on the same device puts the player back in their seat.
+/// A device that isn't seated in a full game can watch, or take over a seat
+/// (say the link was first opened in an in-app browser); the device it
+/// replaces drops to watching.
 ///
 /// The player whose turn it is applies the move locally and writes the new
 /// state. Database rules (database.rules.json) only let that player write,
-/// and only on top of the latest version.
+/// and only on top of the latest version. While they pick letters, their
+/// selection is mirrored to games/{code}/draft so the other player can watch.
 class OnlineSession extends ChangeNotifier {
-  OnlineSession(Set<String> words, {this.code}) : game = Game(words) {
+  /// Hosts a new game on a [size] board, or joins the game at [code], whose
+  /// host already picked the size.
+  OnlineSession(this._words, {this.code, BoardSize size = BoardSize.normal}) {
+    if (code == null) game = Game(_words, size: size);
     _start().catchError((Object e) => _fail(_describe(e)));
   }
 
-  final Game game;
+  final Set<String> _words;
+
+  /// Set before [seat], so it's ready once the session has a seat.
+  late final Game game;
   String? code;
+
+  /// This device's seat, or null while it's watching or deciding.
   int? seat;
+
+  /// The game is full and this device isn't in it: waiting for [spectate] or [takeSeat].
+  bool choosing = false;
+  bool spectating = false;
+
+  /// Why this device is watching when it used to be seated.
+  String? notice;
   Link link = Link.connecting;
   String? error;
   bool pending = false;
-  bool opponentJoined = false;
-  bool opponentOnline = false;
+
+  /// Ready to show the board: seated or watching.
+  bool get joined => seat != null || spectating;
+
+  bool get opponentJoined => seat == null || _seats['p${3 - seat!}'] != null;
+  bool get opponentOnline => seat != null && isOnline(3 - seat!);
+  bool isOnline(int p) => _online['p$p'] == true;
 
   /// Called when a new move lands, so the board can animate it.
   VoidCallback? onMove;
@@ -75,8 +99,16 @@ class OnlineSession extends ChangeNotifier {
   final _db = FirebaseDatabase.instanceFor(app: Firebase.app(), databaseURL: _databaseUrl);
   final _subs = <StreamSubscription>[];
   DatabaseReference? _presence;
+  bool _connected = false;
+  late final String _uid;
+  Map<String, dynamic> _seats = {};
+  Map<String, dynamic> _online = {};
   int _version = 0;
   bool _closed = false;
+
+  /// The latest selection the opponent shared, tagged with the state version
+  /// it was made on so a draft from before a move is never shown after it.
+  Map<String, dynamic>? _draft;
 
   bool get myTurn => link == Link.live && seat == game.turn && !pending && game.over == null;
 
@@ -84,7 +116,7 @@ class OnlineSession extends ChangeNotifier {
 
   Future<void> _start() async {
     final auth = FirebaseAuth.instance;
-    final uid = (auth.currentUser ?? (await auth.signInAnonymously()).user)!.uid;
+    final uid = _uid = (auth.currentUser ?? (await auth.signInAnonymously()).user)!.uid;
 
     if (code == null) {
       // Rules refuse to overwrite an existing game, so a clash just rolls again.
@@ -93,6 +125,7 @@ class OnlineSession extends ChangeNotifier {
         try {
           await _db.ref('games/$c').set({
             'seats': {'p1': uid},
+            'size': game.size.name,
             'state': {...game.toJson(), 'v': 0},
           });
           code = c;
@@ -104,18 +137,23 @@ class OnlineSession extends ChangeNotifier {
     } else {
       final seats = _plain((await _game.child('seats').get()).value) as Map<String, dynamic>?;
       if (seats == null) return _fail('No game with code $code.');
+      // Games from before sizes existed were all on the 7-row board.
+      final size = (await _game.child('size').get()).value as String? ?? BoardSize.small.name;
+      game = Game(_words, size: BoardSize.values.asNameMap()[size] ?? BoardSize.normal);
       if (seats['p1'] == uid) {
         seat = 1;
       } else if (seats['p2'] == uid) {
         seat = 2;
-      } else if (seats['p2'] != null) {
-        return _fail('That game already has two players.');
       } else {
-        try {
-          await _game.child('seats/p2').set(uid);
+        // The empty second seat goes to whoever reaches it first; if it's
+        // taken, this device picks between watching and taking over.
+        final r = await _game
+            .child('seats/p2')
+            .runTransaction((v) => v == null ? Transaction.success(uid) : Transaction.abort());
+        if (r.committed) {
           seat = 2;
-        } on FirebaseException {
-          return _fail('That game already has two players.');
+        } else {
+          choosing = true;
         }
       }
     }
@@ -123,27 +161,85 @@ class OnlineSession extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastKey, code!);
 
-    _presence = _game.child('online/p$seat');
+    if (seat != null) _presence = _game.child('online/p$seat');
     _subs
       ..add(_db.ref('.info/connected').onValue.listen((e) {
-        final up = e.snapshot.value == true;
-        if (up) {
-          _presence!.onDisconnect().remove();
-          _presence!.set(true);
-        }
-        link = up ? Link.live : Link.reconnecting;
+        _connected = e.snapshot.value == true;
+        if (_connected) _announce();
+        link = _connected ? Link.live : Link.reconnecting;
         notifyListeners();
       }))
       ..add(_game.child('state').onValue.listen(_onState, onError: (Object e) => _fail(_describe(e))))
+      ..add(_game.child('draft').onValue.listen((e) {
+        _draft = _plain(e.snapshot.value) as Map<String, dynamic>?;
+        if (_showDraft()) notifyListeners();
+      }))
       ..add(_game.child('online').onValue.listen((e) {
-        final on = _plain(e.snapshot.value) as Map<String, dynamic>?;
-        opponentOnline = on?['p${3 - seat!}'] == true;
+        _online = _plain(e.snapshot.value) as Map<String, dynamic>? ?? {};
         notifyListeners();
       }))
-      ..add(_game.child('seats/p2').onValue.listen((e) {
-        opponentJoined = e.snapshot.value != null;
-        notifyListeners();
-      }));
+      ..add(_game.child('seats').onValue.listen(_onSeats));
+  }
+
+  /// Marks this device's seat as online until it disconnects.
+  void _announce() {
+    final p = _presence;
+    if (p == null || !_connected) return;
+    p.onDisconnect().remove();
+    p.set(true).catchError((_) {});
+  }
+
+  void _onSeats(DatabaseEvent e) {
+    _seats = _plain(e.snapshot.value) as Map<String, dynamic>? ?? {};
+    final s = seat;
+    if (s != null && _seats['p$s'] != _uid) {
+      // Another device took this seat. It now owns the presence flag too.
+      _presence?.onDisconnect().cancel().catchError((_) {});
+      _presence = null;
+      seat = null;
+      spectating = true;
+      notice = 'Someone took over ${names[s]} on another device. You are now watching.';
+      _showDraft();
+    }
+    notifyListeners();
+  }
+
+  /// Watch the game without playing.
+  void spectate() {
+    choosing = false;
+    spectating = true;
+    notice = null;
+    _showDraft();
+    notifyListeners();
+  }
+
+  /// Goes back to the choice between watching and taking a seat.
+  void chooseSeat() {
+    if (seat != null) return;
+    spectating = false;
+    choosing = true;
+    notifyListeners();
+  }
+
+  /// Takes seat [p], replacing whoever is in it.
+  Future<void> takeSeat(int p) async {
+    error = null;
+    try {
+      await _game.child('seats/p$p').set(_uid);
+    } on FirebaseException catch (e) {
+      error = _describe(e);
+      notifyListeners();
+      return;
+    }
+    if (_closed) return;
+    seat = p;
+    choosing = spectating = false;
+    notice = null;
+    game.sel = [];
+    _presence = _game.child('online/p$p');
+    _announce();
+    _showDraft();
+    notifyListeners();
   }
 
   void _onState(DatabaseEvent e) {
@@ -159,7 +255,24 @@ class OnlineSession extends ChangeNotifier {
     } else if (game.fresh.isNotEmpty) {
       onMove?.call();
     }
+    _showDraft();
     notifyListeners();
+  }
+
+  /// Copies the opponent's shared selection onto the board while it's their
+  /// turn. Returns whether it did.
+  bool _showDraft() {
+    final d = _draft;
+    if (game.turn == seat || game.over != null) return false;
+    final current = d != null && d['seat'] == game.turn && d['v'] == _version;
+    game.sel = current ? [for (final i in d['sel'] as List? ?? []) i as int] : [];
+    return true;
+  }
+
+  /// Shares this player's current selection with the opponent.
+  void shareSelection() {
+    if (!myTurn) return;
+    _game.child('draft').set({'seat': seat, 'v': _version, 'sel': List.of(game.sel)}).catchError((_) {});
   }
 
   void _fail(String msg) {
@@ -193,6 +306,7 @@ class OnlineSession extends ChangeNotifier {
       error = 'That move could not be saved. Try again.';
     }
     pending = false;
+    shareSelection(); // a refused move clears the selection; tell the opponent
     if (!_closed) notifyListeners();
   }
 
@@ -210,7 +324,7 @@ class OnlineSession extends ChangeNotifier {
   }
 
   void newBoard(bool mock) {
-    if (game.over == null || pending) return;
+    if (seat == null || game.over == null || pending) return;
     _commit(() {
       game.newGame(mock);
       return true;
@@ -223,8 +337,8 @@ class OnlineSession extends ChangeNotifier {
     for (final s in _subs) {
       s.cancel();
     }
-    _presence?.onDisconnect().cancel();
-    _presence?.remove();
+    _presence?.onDisconnect().cancel().catchError((_) {});
+    _presence?.remove().catchError((_) {});
     super.dispose();
   }
 }

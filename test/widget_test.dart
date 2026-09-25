@@ -7,7 +7,7 @@ import 'package:word_wars/online.dart';
 void main() {
   test("mock board: LAMB near Blue's home takes hexes", () {
     final g = Game({'LAB', 'LAMB'})..newGame(true);
-    final l = g.idxAt(1, 2), a = g.idxAt(1, 4), m = g.idxAt(1, 6), b = g.idxAt(2, 3);
+    final l = g.idxAt(1, 3), a = g.idxAt(1, 5), m = g.idxAt(1, 7), b = g.idxAt(2, 4);
     for (final i in [l, a, m, b]) {
       g.tap(i);
     }
@@ -17,6 +17,20 @@ void main() {
     expect(g.play(), isTrue);
     expect(g.turn, 2);
     expect(g.countOf(1), greaterThan(0));
+  });
+
+  test('board sizes have the right rows and centred homes', () {
+    for (final (size, widths) in [
+      (BoardSize.small, [3, 4, 5, 6, 5, 4, 3]),
+      (BoardSize.normal, [3, 4, 5, 6, 7, 6, 5, 4, 3]),
+      (BoardSize.large, [3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3]),
+    ]) {
+      final g = Game({}, size: size);
+      expect([for (final r in g.rows) r.length], widths);
+      expect(g.cells[g.homeIdx[1]!].r, 0);
+      expect(g.cells[g.homeIdx[2]!].r, size.rows - 1);
+      expect(g.adj[g.homeIdx[1]!].length, 4);
+    }
   });
 
   test('two passes end the game in a draw on an empty board', () {
@@ -29,7 +43,7 @@ void main() {
   test('state survives a JSON round trip', () {
     final g = Game({'LAMB'});
     g.newGame(true);
-    for (final i in [g.idxAt(1, 2), g.idxAt(1, 4), g.idxAt(1, 6), g.idxAt(2, 3)]) {
+    for (final i in [g.idxAt(1, 3), g.idxAt(1, 5), g.idxAt(1, 7), g.idxAt(2, 4)]) {
       g.tap(i);
     }
     g.play();

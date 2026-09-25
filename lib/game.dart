@@ -1,24 +1,48 @@
 import 'dart:math';
 
-/// Column positions of the hexes in each board row. Columns step by 2 so that
-/// neighbouring rows interleave into a hex grid.
-const rows = [
-  [3, 5, 7],
-  [2, 4, 6, 8],
-  [1, 3, 5, 7, 9],
-  [0, 2, 4, 6, 8, 10],
-  [1, 3, 5, 7, 9],
-  [2, 4, 6, 8],
-  [3, 5, 7],
+/// How many rows the board has. Rows grow by one hex towards the middle, so
+/// the widest row is `rows ~/ 2 + 3` hexes.
+enum BoardSize {
+  small(7, 'Small'),
+  normal(9, 'Normal'),
+  large(11, 'Large');
+
+  const BoardSize(this.rows, this.label);
+  final int rows;
+  final String label;
+
+  int get _mid => rows ~/ 2;
+
+  /// The column of the middle hex in every row.
+  int get centerCol => _mid + 2;
+
+  /// The largest column number on the board.
+  int get maxCol => 2 * centerCol;
+
+  /// Column positions of the hexes in each board row. Columns step by 2 so
+  /// that neighbouring rows interleave into a hex grid.
+  List<List<int>> get layout => [
+        for (var r = 0; r < rows; r++)
+          [
+            for (var c = (r - _mid).abs(); c <= maxCol - (r - _mid).abs(); c += 2) c,
+          ],
+      ];
+}
+
+/// A fixed normal-size board for testing. `*` marks the home hexes, which have no letter.
+const mock = [
+  'L*I',
+  'LAMN',
+  'YBDOA',
+  'DOLANL',
+  'STRAINE',
+  'GRATES',
+  'BREIF',
+  'YVRY',
+  'E*E',
 ];
 
-/// A fixed board for testing. `*` marks the home hexes, which have no letter.
-const mock = ['L*I', 'LAMN', 'YBDOA', 'DOLANL', 'BREIF', 'YVRY', 'E*E'];
-
 const names = {1: 'Blue', 2: 'Red'};
-
-/// Where each player's home sits: Blue at the top, Red at the bottom.
-const _homes = {1: (r: 0, c: 5), 2: (r: 6, c: 5)};
 
 /// Row/column offsets from a hex to its six neighbours.
 const _neighbourOffsets = [
@@ -132,7 +156,10 @@ class Analysis {
 }
 
 class Game {
-  Game(this.words) {
+  Game(this.words, {this.size = BoardSize.normal})
+      // Blue's home is at the top, Red's at the bottom.
+      : _homes = {1: (r: 0, c: size.centerCol), 2: (r: size.rows - 1, c: size.centerCol)},
+        rows = size.layout {
     for (var r = 0; r < rows.length; r++) {
       for (final c in rows[r]) {
         cells.add(Cell(r, c, _homeOwnerAt(r, c)));
@@ -149,6 +176,9 @@ class Game {
   }
 
   final Set<String> words;
+  final BoardSize size;
+  final List<List<int>> rows;
+  final Map<int, ({int r, int c})> _homes;
   final cells = <Cell>[];
 
   /// Neighbour indices for each cell.
@@ -171,7 +201,7 @@ class Game {
   Set<int> fresh = {};
 
   /// The player whose home is at row [r], column [c], or 0 if it's not a home.
-  static int _homeOwnerAt(int r, int c) {
+  int _homeOwnerAt(int r, int c) {
     for (final MapEntry(key: p, value: home) in _homes.entries) {
       if (home == (r: r, c: c)) return p;
     }
@@ -181,7 +211,9 @@ class Game {
   /// Index of the cell at row [r], column [c], or -1 if there is none.
   int idxAt(int r, int c) => cells.indexWhere((x) => x.r == r && x.c == c);
 
+  /// [useMock] fills a normal-size board with the fixed [mock] letters.
   void newGame(bool useMock) {
+    assert(!useMock || size == BoardSize.normal, 'mock only fits the normal board');
     for (final x in cells) {
       x.owner = 0;
       if (x.home != 0) continue;

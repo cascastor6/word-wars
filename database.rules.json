@@ -5,13 +5,20 @@
         ".read": "auth != null",
         ".write": "auth != null && !data.exists() && newData.child('seats/p1').val() === auth.uid",
         "seats": {
+          "p1": {
+            ".write": "auth != null && data.exists() && newData.val() === auth.uid && data.parent().child('p2').val() !== auth.uid"
+          },
           "p2": {
-            ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+            ".write": "auth != null && data.parent().child('p1').exists() && newData.val() === auth.uid && data.parent().child('p1').val() !== auth.uid"
           }
         },
         "state": {
           ".write": "auth != null && ((data.child('turn').val() === 1 && data.parent().child('seats/p1').val() === auth.uid) || (data.child('turn').val() === 2 && data.parent().child('seats/p2').val() === auth.uid) || (data.child('over').exists() && (data.parent().child('seats/p1').val() === auth.uid || data.parent().child('seats/p2').val() === auth.uid)))",
           ".validate": "newData.hasChildren(['letters', 'owners', 'turn', 'v']) && ((!data.exists() && newData.child('v').val() === 0) || newData.child('v').val() === data.child('v').val() + 1)"
+        },
+        "draft": {
+          ".write": "auth != null && ((data.parent().child('state/turn').val() === 1 && data.parent().child('seats/p1').val() === auth.uid) || (data.parent().child('state/turn').val() === 2 && data.parent().child('seats/p2').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['seat', 'v']) && newData.child('seat').val() === data.parent().child('state/turn').val() && newData.child('v').val() === data.parent().child('state/v').val()"
         },
         "online": {
           "$seat": {
