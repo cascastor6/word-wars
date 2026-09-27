@@ -5,6 +5,7 @@ import 'package:word_wars/data/cpu.dart';
 import 'package:word_wars/data/game.dart';
 import 'package:word_wars/data/online.dart';
 import 'package:word_wars/data/word_entry.dart';
+import 'package:word_wars/presentation/about/about_screen.dart';
 import 'package:word_wars/presentation/common/palette.dart';
 import 'package:word_wars/presentation/common/widgets/game_button.dart';
 import 'package:word_wars/presentation/game/game_screen.dart';
@@ -109,6 +110,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                   const SizedBox(height: 28),
                   SizePicker(pal: pal, size: size, onPick: pickSize),
+                  const SizedBox(height: 28),
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => open(const AboutScreen()),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text('About',
+                            style: TextStyle(
+                                fontSize: 14,
+                                color: pal.muted,
+                                decoration: TextDecoration.underline,
+                                decorationColor: pal.muted)),
+                      ),
+                    ),
+                  ),
                 ]),
               ),
             ),
