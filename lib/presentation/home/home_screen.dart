@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:word_wars/data/cpu.dart';
 import 'package:word_wars/data/game.dart';
 import 'package:word_wars/data/online.dart';
+import 'package:word_wars/data/word_entry.dart';
 import 'package:word_wars/presentation/common/palette.dart';
 import 'package:word_wars/presentation/common/widgets/game_button.dart';
 import 'package:word_wars/presentation/game/game_screen.dart';
@@ -13,8 +14,9 @@ import 'package:word_wars/presentation/home/widgets/play_on_device_dialog.dart';
 import 'package:word_wars/presentation/home/widgets/size_picker.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.words, required this.onJoin});
+  const HomeScreen({super.key, required this.words, required this.definitions, required this.onJoin});
   final Set<String> words;
+  final Map<String, WordEntry> definitions;
   final void Function(String code) onJoin;
 
   @override
@@ -71,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> playOnDevice() async {
     final vsCpu = await showPlayOnDeviceDialog(context, level: level, onLevel: pickLevel);
     if (vsCpu == null) return;
-    open(GameScreen(words: widget.words, size: size, cpu: vsCpu ? level : null));
+    open(GameScreen(words: widget.words, definitions: widget.definitions, size: size, cpu: vsCpu ? level : null));
   }
 
   Future<void> askForCode() async {
@@ -97,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   GameButton('Play on this device', pal: pal, turn: 1, primary: true, onPressed: playOnDevice),
                   const SizedBox(height: 10),
                   GameButton('Invite a friend with a link', pal: pal, turn: 2, primary: true,
-                      onPressed: () => open(GameScreen(words: widget.words, online: OnlineSession(widget.words, size: size)))),
+                      onPressed: () => open(GameScreen(words: widget.words, definitions: widget.definitions, online: OnlineSession(widget.words, size: size)))),
                   const SizedBox(height: 10),
                   GameButton('Join with a code', pal: pal, turn: 1, onPressed: askForCode),
                   if (resume != null) ...[

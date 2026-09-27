@@ -8,12 +8,29 @@ import 'package:word_wars/presentation/common/hex_geometry.dart';
 import 'package:word_wars/presentation/common/palette.dart';
 
 class Board extends StatelessWidget {
-  const Board({super.key, required this.game, required this.analysis, required this.pal, required this.pop, required this.onTap});
+  const Board(
+      {super.key,
+      required this.game,
+      required this.analysis,
+      required this.pal,
+      required this.pop,
+      required this.onTap,
+      this.showControls = false,
+      this.onPlay,
+      this.onPass,
+      this.onClear});
   final Game game;
   final Analysis analysis;
   final Palette pal;
   final Animation<double> pop;
   final void Function(int) onTap;
+
+  /// Shows round play, pass and clear buttons at the board's edges: play on
+  /// the right of the bottom row, pass on the left, clear above pass.
+  final bool showControls;
+
+  /// Each is null while that action isn't allowed.
+  final VoidCallback? onPlay, onPass, onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +39,7 @@ class Board extends StatelessWidget {
       aspectRatio: viewBox.width / viewBox.height,
       child: LayoutBuilder(builder: (context, box) {
         final scale = box.maxWidth / viewBox.width;
-        return GestureDetector(
+        final board = GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (d) {
             final pt = d.localPosition / scale + viewBox.topLeft;
@@ -40,9 +57,60 @@ class Board extends StatelessWidget {
             ),
           ),
         );
+        if (!showControls) return board;
+        final d = hexRadius * 1.5 * scale;
+        final bottom = game.size.rows - 1;
+        // A round button against the left or right edge, level with row [r].
+        Widget at({required bool right, required int r, required IconData icon, required String tip, VoidCallback? onPressed}) {
+          return Positioned(
+            left: right ? null : 0,
+            right: right ? 0 : null,
+            top: (r * hexDy - viewBox.top) * scale - d / 2,
+            width: d,
+            height: d,
+            child: _RoundButton(pal: pal, turn: game.turn, icon: icon, tooltip: tip, onPressed: onPressed),
+          );
+        }
+
+        return Stack(children: [
+          board,
+          at(right: true, r: bottom, icon: Icons.check_rounded, tip: 'Play word', onPressed: onPlay),
+          at(right: false, r: bottom, icon: Icons.skip_next_rounded, tip: 'Pass', onPressed: onPass),
+          at(right: false, r: bottom - 1, icon: Icons.close_rounded, tip: 'Clear', onPressed: onClear),
+        ]);
       }),
     );
   }
+}
+
+/// A round icon button in the current player's colour.
+class _RoundButton extends StatelessWidget {
+  const _RoundButton(
+      {required this.pal, required this.turn, required this.icon, required this.tooltip, this.onPressed});
+  final Palette pal;
+  final int turn;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+        opacity: onPressed == null ? .35 : 1,
+        child: Material(
+          color: pal.fill(turn),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: Tooltip(
+              message: tooltip,
+              child: LayoutBuilder(
+                builder: (context, box) => Icon(icon, color: Colors.white, size: box.maxWidth * .6),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class BoardPainter extends CustomPainter {

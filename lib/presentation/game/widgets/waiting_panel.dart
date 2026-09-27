@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'package:word_wars/data/game.dart';
+import 'package:word_wars/data/word_entry.dart';
 import 'package:word_wars/presentation/common/palette.dart';
+import 'package:word_wars/presentation/game/widgets/definition_text.dart';
 
 /// Shown while the opponent or the computer takes their turn.
 class WaitingPanel extends StatelessWidget {
-  const WaitingPanel({super.key, required this.pal, required this.turn, required this.word, required this.thinking});
+  const WaitingPanel({super.key, required this.pal, required this.turn, required this.word, required this.thinking, this.definition});
   final Palette pal;
   final int turn;
 
@@ -14,6 +16,9 @@ class WaitingPanel extends StatelessWidget {
 
   /// True for the computer, which is "thinking" rather than being waited for.
   final bool thinking;
+
+  /// The meaning of [word] once it's a valid play.
+  final WordEntry? definition;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +41,13 @@ class WaitingPanel extends StatelessWidget {
               style: TextStyle(fontSize: 34, fontWeight: FontWeight.w600, letterSpacing: 34 * .12, color: pal.lineOf(turn))),
         ),
       ),
-      const SizedBox(height: 42),
+      SizedBox(
+        height: 42,
+        child: switch (definition) {
+          final d? => DefinitionText(d, pal: pal),
+          null => null,
+        },
+      ),
     ]);
   }
 }

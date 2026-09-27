@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:word_wars/data/cpu_words.dart';
 import 'package:word_wars/data/game.dart';
 
 /// How strongly the computer plays.
@@ -11,13 +12,15 @@ enum Difficulty {
     shortlist: 40,
     choices: 5,
     lookahead: 0,
+    commonOnly: true,
   ),
   medium(
     'Medium',
-    lengths: {3: 25, 4: 35, 5: 25, 6: 15},
+    lengths: {3: 25, 4: 35, 5: 25, 6: 10, 7: 5},
     shortlist: 120,
     choices: 2,
     lookahead: 0,
+    commonOnly: true,
   ),
   hard(
     'Hard',
@@ -33,6 +36,7 @@ enum Difficulty {
     required this.shortlist,
     required this.choices,
     required this.lookahead,
+    this.commonOnly = false,
   });
   final String label;
 
@@ -50,6 +54,9 @@ enum Difficulty {
 
   /// How many of its best plays it checks against the rival's best reply.
   final int lookahead;
+
+  /// Plays only from [cpuWords] instead of the whole word list.
+  final bool commonOnly;
 }
 
 typedef _Play = ({List<int> sel, double score});
@@ -62,7 +69,7 @@ typedef _Play = ({List<int> sel, double score});
 class Cpu {
   Cpu(Set<String> words, this.level)
     : _words = [
-        for (final w in words)
+        for (final w in level.commonOnly ? cpuWords : words)
           if (w.length >= 3 &&
               w.length <= level.maxLen &&
               w.codeUnits.every((u) => u >= 65 && u <= 90))

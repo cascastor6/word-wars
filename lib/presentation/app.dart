@@ -6,13 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:word_wars/data/online.dart';
+import 'package:word_wars/data/word_entry.dart';
 import 'package:word_wars/presentation/common/palette.dart';
 import 'package:word_wars/presentation/game/game_screen.dart';
 import 'package:word_wars/presentation/home/home_screen.dart';
 
 class HexWordDuelApp extends StatefulWidget {
-  const HexWordDuelApp({super.key, required this.words});
+  const HexWordDuelApp({super.key, required this.words, required this.definitions});
   final Set<String> words;
+  final Map<String, WordEntry> definitions;
 
   @override
   State<HexWordDuelApp> createState() => _HexWordDuelAppState();
@@ -53,7 +55,7 @@ class _HexWordDuelAppState extends State<HexWordDuelApp> {
     lastOpened = code;
     n.popUntil((r) => r.isFirst);
     n.push(MaterialPageRoute(
-        builder: (_) => GameScreen(words: widget.words, online: OnlineSession(widget.words, code: code))));
+        builder: (_) => GameScreen(words: widget.words, definitions: widget.definitions, online: OnlineSession(widget.words, code: code))));
   }
 
   @override
@@ -74,7 +76,7 @@ class _HexWordDuelAppState extends State<HexWordDuelApp> {
       debugShowCheckedModeBanner: false,
       theme: theme(Brightness.light),
       darkTheme: theme(Brightness.dark),
-      home: HomeScreen(words: widget.words, onJoin: openInvite),
+      home: HomeScreen(words: widget.words, definitions: widget.definitions, onJoin: openInvite),
     );
   }
 }

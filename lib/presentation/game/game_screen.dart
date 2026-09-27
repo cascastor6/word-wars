@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:word_wars/data/cpu.dart';
 import 'package:word_wars/data/game.dart';
 import 'package:word_wars/data/online.dart';
+import 'package:word_wars/data/word_entry.dart';
 import 'package:word_wars/presentation/common/palette.dart';
 import 'package:word_wars/presentation/game/widgets/board.dart';
 import 'package:word_wars/presentation/game/widgets/choose_seat_view.dart';
@@ -19,8 +20,17 @@ import 'package:word_wars/presentation/game/widgets/turn_controls.dart';
 import 'package:word_wars/presentation/game/widgets/waiting_panel.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.words, this.online, this.cpu, this.size = BoardSize.normal});
+  const GameScreen(
+      {super.key,
+      required this.words,
+      this.definitions = const {},
+      this.online,
+      this.cpu,
+      this.size = BoardSize.normal});
   final Set<String> words;
+
+  /// Shown in place of the play's statistics once a word is valid.
+  final Map<String, WordEntry> definitions;
 
   /// Set for a game against the computer, which plays [cpuSeat].
   final Difficulty? cpu;
@@ -197,7 +207,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       Board(game: game, analysis: a, pal: pal, pop: pop,
                           onTap: (i) {
                             if (canAct) select(() => game.tap(i));
-                          }),
+                          },
+                          showControls: over == null && !waiting,
+                          onPlay: a.ok && canAct ? doPlay : null,
+                          onPass: canAct ? doPass : null,
+                          onClear: game.sel.isEmpty || !canAct ? null : () => select(game.clear)),
                       const SizedBox(height: 6),
                       if (over == null) _playSection(pal, a, turn) else _overSection(pal, over),
                       const SizedBox(height: 18),
@@ -215,10 +229,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  /// Whether it's the opponent's or the computer's turn.
+  bool get waiting => online != null && online!.seat != game.turn || botsTurn;
+
   Widget _playSection(Palette pal, Analysis a, int turn) {
     final online = this.online;
-    if (online != null && online.seat != turn || botsTurn) {
-      return WaitingPanel(pal: pal, turn: turn, word: a.word, thinking: botsTurn);
+    if (waiting) {
+      return WaitingPanel(pal: pal, turn: turn, word: a.word, thinking: botsTurn,
+          definition: a.ok ? widget.definitions[a.word] : null);
     }
     return TurnControls(
       pal: pal,
@@ -226,9 +244,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       turn: turn,
       yourTurn: online != null || bot != null,
       error: online?.error,
-      onClear: game.sel.isEmpty || !canAct ? null : () => select(game.clear),
-      onPass: canAct ? doPass : null,
-      onPlay: a.ok && canAct ? doPlay : null,
+      definition: a.ok ? widget.definitions[a.word] : null,
     );
   }
 
